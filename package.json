@@ -1,6 +1,6 @@
 {
   "name": "uchujin",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "JavaScript lighting control library: DMX frame utilities for all environments, Art-Net and FTDI DMX transmitters for Node.js",
   "author": "Kazumi Inada <hello@nandenjin.com>",
   "license": "MIT",
