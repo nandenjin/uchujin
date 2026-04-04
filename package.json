@@ -15,31 +15,45 @@
     "lighting",
     "dmx"
   ],
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./artnet": "./dist/artnet/index.js",
-    "./ftdi": "./dist/ftdi/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./artnet": {
+      "types": "./dist/artnet/index.d.ts",
+      "import": "./dist/artnet/index.js",
+      "require": "./dist/artnet/index.cjs"
+    },
+    "./ftdi": {
+      "types": "./dist/ftdi/index.d.ts",
+      "import": "./dist/ftdi/index.js",
+      "require": "./dist/ftdi/index.cjs"
+    }
   },
   "files": [
     "dist"
   ],
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
     "format": "prettier --write .",
     "lint": "eslint .",
     "lintfix": "eslint . --fix",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "10.0.1",
     "@types/node": "25.5.0",
     "eslint": "10.1.0",
-    "eslint-config-prettier": "^10.1.8",
+    "eslint-config-prettier": "10.1.8",
     "jiti": "2.6.1",
     "prettier": "3.8.1",
-    "typescript": "6.0.2",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
     "typescript-eslint": "8.58.0"
   },
   "optionalDependencies": {
