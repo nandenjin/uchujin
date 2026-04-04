@@ -1,0 +1,48 @@
+{
+  "name": "uchujin",
+  "version": "0.0.0",
+  "description": "JavaScript lighting control library: DMX frame utilities for all environments, Art-Net and FTDI DMX transmitters for Node.js",
+  "author": "Kazumi Inada <hello@nandenjin.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nandenjin/uchujin.git"
+  },
+  "keywords": [
+    "dmx",
+    "artnet",
+    "ftdi",
+    "lighting",
+    "dmx"
+  ],
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./artnet": "./dist/artnet/index.js",
+    "./ftdi": "./dist/ftdi/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "format": "prettier --write .",
+    "lint": "eslint .",
+    "lintfix": "eslint . --fix",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "25.5.0",
+    "eslint": "10.1.0",
+    "eslint-config-prettier": "^10.1.8",
+    "jiti": "2.6.1",
+    "prettier": "3.8.1",
+    "typescript": "6.0.2",
+    "typescript-eslint": "8.58.0"
+  },
+  "optionalDependencies": {
+    "ftdi-d2xx": "^1.3.1"
+  }
+}
