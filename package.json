@@ -50,7 +50,7 @@
     "@types/node": "25.6.0",
     "eslint": "10.3.0",
     "eslint-config-prettier": "10.1.8",
-    "jiti": "2.6.1",
+    "jiti": "2.7.0",
     "prettier": "3.8.3",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
