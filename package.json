@@ -48,7 +48,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "25.8.0",
-    "eslint": "10.3.0",
+    "eslint": "10.4.0",
     "eslint-config-prettier": "10.1.8",
     "jiti": "2.7.0",
     "prettier": "3.8.3",
