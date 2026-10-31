@@ -1,27 +1,40 @@
 import { DmxFrame } from '../DmxFrame'
-import {
-  FT_BITS_8,
-  FT_PARITY_NONE,
-  FT_PURGE_TX,
-  FT_STOP_BITS_2,
-  FTDI_Device,
-  FTDI_DeviceInfo,
-  getDeviceInfoList,
-  openDevice,
-} from 'ftdi-d2xx'
+// ftdi-d2xx is a native CommonJS addon: Node's ESM loader cannot detect its named
+// exports, so it has to be imported as default.
+import ftdi from 'ftdi-d2xx'
+import type { FTDI_Device, FTDI_DeviceInfo } from 'ftdi-d2xx'
+
+// D2XX constants. ftdi-d2xx declares these in its typings but does not export them at runtime.
+const FT_BITS_8 = 8
+const FT_STOP_BITS_2 = 2
+const FT_PARITY_NONE = 0
+const FT_FLOW_NONE = 0x0000
+const FT_PURGE_RX = 1
+const FT_PURGE_TX = 2
+
+/**
+ * Minimum frame period. 513 slots at 250kbps (11 bits each) take ~22.6ms;
+ * starting the next break earlier would cut off the tail of the frame.
+ */
+const MIN_FRAME_MS = 25
 
 export type FtdiDeviceInfo = FTDI_DeviceInfo
 
 export interface FtdiTransmitterOptions {
   /**
-   * Transmission FPS (Frames Per Second)
-   * @default 44
+   * Transmission FPS (Frames Per Second). Capped at 40 so that a full frame always completes.
+   * @default 30
    */
   fps?: number
   /**
    * Specific device to connect to
    */
   deviceInfo?: FtdiDeviceInfo
+  /**
+   * Called when the device fails during transmission (e.g. the adapter is unplugged).
+   * Transmission stops and the device is closed; call `connect()` again to resume.
+   */
+  onError?: (error: unknown) => void
 }
 
 /**
@@ -34,8 +47,9 @@ export class FtdiTransmitter {
    */
   readonly buffer: DmxFrame = new DmxFrame()
   private isRunning: boolean = false
-  private fps: number = 44
+  private fps: number = 30
   private deviceInfo?: FtdiDeviceInfo
+  private onError?: (error: unknown) => void
 
   constructor(options?: FtdiTransmitterOptions) {
     if (options?.fps) {
@@ -44,6 +58,7 @@ export class FtdiTransmitter {
     if (options?.deviceInfo) {
       this.deviceInfo = options.deviceInfo
     }
+    this.onError = options?.onError
   }
 
   /**
@@ -55,46 +70,53 @@ export class FtdiTransmitter {
       throw new Error('Device not specified')
     }
 
-    this.device = await openDevice(this.deviceInfo)
-    this.device.setDataCharacteristics(
-      FT_BITS_8,
-      FT_STOP_BITS_2,
-      FT_PARITY_NONE
-    )
+    const device = await ftdi.openDevice(this.deviceInfo)
+    // Same init sequence as ENTTEC Open DMX USB. Clearing RTS enables the RS485 line driver
+    // on many FTDI-based DMX adapters; without it nothing reaches the fixtures.
+    device.resetDevice()
+    device.setBaudRate(250000)
+    device.setDataCharacteristics(FT_BITS_8, FT_STOP_BITS_2, FT_PARITY_NONE)
+    device.setFlowControl(FT_FLOW_NONE, 0, 0)
+    device.clrRts()
+    device.purge(FT_PURGE_TX | FT_PURGE_RX)
+    this.device = device
 
     this.isRunning = true
     this.startTransmissionLoop()
   }
 
   private async startTransmissionLoop() {
-    if (!this.device) return
-
-    const { device } = this
+    const data = new Uint8Array(513)
+    data[0] = 0x00 // Start code
 
     while (this.isRunning && this.device) {
-      // Clear TX buffer
-      device.purge(FT_PURGE_TX)
+      const { device } = this
+      const startedAt = performance.now()
 
-      // Break
-      device.setBaudRate(90000)
-      await device.write(Uint8Array.from([0]))
+      try {
+        // Break + MAB
+        device.setBreakOn()
+        await delay(1)
+        device.setBreakOff()
 
-      // Start code
-      device.setBaudRate(250000)
-      const data = new Uint8Array(513)
-      data[0] = 0x00
-
-      // Data
-      for (let i = 0; i < 512; i++) {
-        data[i + 1] = this.buffer.data[i] ?? 0
+        // Data
+        for (let i = 0; i < 512; i++) {
+          data[i + 1] = this.buffer.data[i] ?? 0
+        }
+        await device.write(data)
+      } catch (error) {
+        if (!this.isRunning) return // closed during transmission
+        await this.close().catch(() => {})
+        if (this.onError) {
+          this.onError(error)
+          return
+        }
+        throw error
       }
 
-      // Send packet
-      await device.write(data)
-
       // FPS wait
-      const delayMs = 1000 / this.fps
-      await delay(delayMs)
+      const periodMs = Math.max(1000 / this.fps, MIN_FRAME_MS)
+      await delay(periodMs - (performance.now() - startedAt))
     }
   }
 
@@ -110,22 +132,23 @@ export class FtdiTransmitter {
 
   async close() {
     this.isRunning = false
-    if (this.device) {
-      await this.device.close()
-      this.device = null
+    const { device } = this
+    this.device = null
+    if (device) {
+      await device.close()
     }
   }
 }
 
 function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
 }
 
 /**
  * List connected FTDI devices
  */
 export async function listFtdiDevices() {
-  return await getDeviceInfoList()
+  return await ftdi.getDeviceInfoList()
 }
 
 export async function getFtdiDeviceInfo(serialNumber: string) {
