@@ -41,12 +41,12 @@ export interface FtdiTransmitterOptions {
  * Send DMX data via FTDI USB
  */
 export class FtdiTransmitter {
-  private device: FTDI_Device | null = null
   /**
    * Internal DMX buffer
    */
   readonly buffer: DmxFrame = new DmxFrame()
   private isRunning: boolean = false
+  private loop: Promise<void> | null = null
   private fps: number = 30
   private deviceInfo?: FtdiDeviceInfo
   private onError?: (error: unknown) => void
@@ -69,6 +69,7 @@ export class FtdiTransmitter {
     if (!this.deviceInfo) {
       throw new Error('Device not specified')
     }
+    await this.close()
 
     const device = await ftdi.openDevice(this.deviceInfo)
     // Same init sequence as ENTTEC Open DMX USB. Clearing RTS enables the RS485 line driver
@@ -79,21 +80,24 @@ export class FtdiTransmitter {
     device.setFlowControl(FT_FLOW_NONE, 0, 0)
     device.clrRts()
     device.purge(FT_PURGE_TX | FT_PURGE_RX)
-    this.device = device
 
     this.isRunning = true
-    this.startTransmissionLoop()
+    this.loop = this.runTransmissionLoop(device)
   }
 
-  private async startTransmissionLoop() {
+  /**
+   * Owns the device until it stops. The device is closed here, never while a write is
+   * in flight: closing under a pending FT_Write leaves the native transfer stuck forever.
+   */
+  private async runTransmissionLoop(device: FTDI_Device) {
     const data = new Uint8Array(513)
     data[0] = 0x00 // Start code
+    let failure: unknown = null
 
-    while (this.isRunning && this.device) {
-      const { device } = this
-      const startedAt = performance.now()
+    try {
+      while (this.isRunning) {
+        const startedAt = performance.now()
 
-      try {
         // Break + MAB
         device.setBreakOn()
         await delay(1)
@@ -104,19 +108,22 @@ export class FtdiTransmitter {
           data[i + 1] = this.buffer.data[i] ?? 0
         }
         await device.write(data)
-      } catch (error) {
-        if (!this.isRunning) return // closed during transmission
-        await this.close().catch(() => {})
-        if (this.onError) {
-          this.onError(error)
-          return
-        }
-        throw error
-      }
 
-      // FPS wait
-      const periodMs = Math.max(1000 / this.fps, MIN_FRAME_MS)
-      await delay(periodMs - (performance.now() - startedAt))
+        // FPS wait
+        const periodMs = Math.max(1000 / this.fps, MIN_FRAME_MS)
+        await delay(periodMs - (performance.now() - startedAt))
+      }
+    } catch (error) {
+      failure = error ?? new Error('FTDI transmission failed')
+    }
+
+    this.isRunning = false
+    this.loop = null
+    await device.close().catch(() => {})
+
+    if (failure) {
+      if (!this.onError) throw failure
+      this.onError(failure)
     }
   }
 
@@ -130,13 +137,12 @@ export class FtdiTransmitter {
     }
   }
 
+  /**
+   * Stop transmission and close the device. Resolves after the frame in flight has been sent.
+   */
   async close() {
     this.isRunning = false
-    const { device } = this
-    this.device = null
-    if (device) {
-      await device.close()
-    }
+    await this.loop?.catch(() => {})
   }
 }
 
